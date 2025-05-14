@@ -16,6 +16,9 @@ from . import match_utils, graph, utils
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
+import multiprocessing as mp
+from functools import partial
+
 
 class Fusor:
     """
@@ -582,7 +585,7 @@ class Fusor:
             wt1=0.3, wt2=0.3,
             svd_components1=None, svd_components2=None,
             randomized_svd=False, svd_runs=1,
-            verbose=True
+            verbose=True, processes = 1
     ):
         """
         Perform initial matching.
@@ -608,8 +611,8 @@ class Fusor:
         -------
         None
         """
-        self._init_matching = []
-        for b1, b2 in self._batch1_to_batch2:
+        def func(b1b2):
+            b1, b2 = b1b2
             if verbose:
                 print(
                     'Now at batch {}<->{}...'.format(b1, b2),
@@ -635,26 +638,39 @@ class Fusor:
             else:
                 raise ValueError('self.method must be one of \'centroid_shrinkage\' or \'graph_smoothing\'.')
 
-            self._init_matching.append(
-                match_utils.get_initial_matching(
-                    arr1=arr1,
-                    arr2=arr2,
-                    clust_labels1=clust_labels1,
-                    clust_labels2=clust_labels2,
-                    edges1=edges1,
-                    edges2=edges2,
-                    wt1=wt1,
-                    wt2=wt2,
-                    randomized_svd=randomized_svd,
-                    svd_runs=svd_runs,
-                    svd_components1=svd_components1,
-                    svd_components2=svd_components2,
-                    verbose=False
-                )
+            initial_matching = match_utils.get_initial_matching(
+                arr1=arr1,
+                arr2=arr2,
+                clust_labels1=clust_labels1,
+                clust_labels2=clust_labels2,
+                edges1=edges1,
+                edges2=edges2,
+                wt1=wt1,
+                wt2=wt2,
+                randomized_svd=randomized_svd,
+                svd_runs=svd_runs,
+                svd_components1=svd_components1,
+                svd_components2=svd_components2,
+                verbose=verbose
             )
+            
+            return initial_matching
+        
+        if processes > 1:
+            pool = mp.Pool(processes)
+            _map = pool.map
+
+        else:
+            _map = map
+
+        self._init_matching = list(_map(func, self._batch1_to_batch2))
+
+        if processes > 1:
+            pool.close()
 
         if verbose:
             print('Done!', flush=True)
+        
 
     def plot_canonical_correlations(
             self, batch=None,
@@ -766,7 +782,8 @@ class Fusor:
             n_iters=1,
             randomized_svd=False, svd_runs=1,
             cca_max_iter=2000,
-            verbose=True
+            verbose=True, 
+            processes = 1
     ):
         """
         Perform refined matching.
@@ -808,9 +825,8 @@ class Fusor:
         self._svd_runs_for_cca_embedding = svd_runs
         self._cca_components = cca_components
         self._cca_max_iter = cca_max_iter
-
-        self._refined_matching = []
-        for batch_idx, (b1, b2) in enumerate(self._batch1_to_batch2):
+        def func(b1b2):
+            batch_idx, (b1, b2) = b1b2
             if verbose:
                 print(
                     'Now at batch {}<->{}...'.format(b1, b2),
@@ -838,28 +854,40 @@ class Fusor:
             else:
                 raise ValueError('self.method must be one of \'centroid_shrinkage\' or \'graph_smoothing\'.')
 
-            self._refined_matching.append(
-                match_utils.get_refined_matching(
-                    init_matching=self._init_matching[batch_idx],
-                    arr1=arr1,
-                    arr2=arr2,
-                    randomized_svd=randomized_svd,
-                    svd_runs=svd_runs,
-                    svd_components1=svd_components1,
-                    svd_components2=svd_components2,
-                    clust_labels1=clust_labels1,
-                    clust_labels2=clust_labels2,
-                    edges1=edges1,
-                    edges2=edges2,
-                    wt1=wt1,
-                    wt2=wt2,
-                    n_iters=n_iters,
-                    filter_prop=filter_prop,
-                    cca_components=cca_components,
-                    cca_max_iter=cca_max_iter,
-                    verbose=False
-                )
+            refined_matching = match_utils.get_refined_matching(
+                init_matching=self._init_matching[batch_idx],
+                arr1=arr1,
+                arr2=arr2,
+                randomized_svd=randomized_svd,
+                svd_runs=svd_runs,
+                svd_components1=svd_components1,
+                svd_components2=svd_components2,
+                clust_labels1=clust_labels1,
+                clust_labels2=clust_labels2,
+                edges1=edges1,
+                edges2=edges2,
+                wt1=wt1,
+                wt2=wt2,
+                n_iters=n_iters,
+                filter_prop=filter_prop,
+                cca_components=cca_components,
+                cca_max_iter=cca_max_iter,
+                verbose=verbose
             )
+            
+            return refined_matching
+        
+        if processes > 1:
+            pool = mp.Pool(processes)
+            _map = pool.map
+
+        else:
+            _map = map
+
+        self._refined_matching = list(_map(func, enumerate(self._batch1_to_batch2)))
+
+        if processes > 1:
+            pool.close()
 
         if verbose:
             print('Done!', flush=True)
